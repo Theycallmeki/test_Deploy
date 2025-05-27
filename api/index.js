@@ -2,7 +2,7 @@ const express = require('express');
 const bodyParser = require('body-parser');
 const path = require('path');
 const serverless = require('serverless-http');
-const sequelize = require('../db');            // Adjusted path since inside api folder
+const sequelize = require('../db');            // Sequelize instance configured with better-sqlite3
 const Item = require('../models/item');
 const SalesHistory = require('../models/salesHistory');
 

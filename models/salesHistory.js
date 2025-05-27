@@ -1,39 +1,31 @@
-// models/SalesHistory.js
-const { DataTypes } = require('sequelize');
-const sequelize = require('../db');
-const Item = require('./item');
+// models/salesHistory.js
+const db = require('../db');
 
-const SalesHistory = sequelize.define('SalesHistory', {
-  id: {
-    type: DataTypes.INTEGER,
-    primaryKey: true,
-    autoIncrement: true,
+const SalesHistoryModel = {
+  // Fetch all sales history entries with related item details
+  getAllWithItems() {
+    const stmt = db.prepare(`
+      SELECT sh.*, i.name AS itemName, i.category, i.price
+      FROM sales_history sh
+      JOIN Items i ON sh.itemId = i.id
+    `);
+    return stmt.all();
   },
-  itemId: {
-    type: DataTypes.INTEGER,
-    allowNull: false,
-    references: {
-      model: Item,
-      key: 'id',
-    },
-  },
-  date: {
-    type: DataTypes.DATEONLY,
-    allowNull: false,
-    defaultValue: DataTypes.NOW,  // <-- set default to current date
 
-  },
-  quantitySold: {
-    type: DataTypes.INTEGER,
-    allowNull: false,
-  },
-}, {
-  timestamps: false, // disable createdAt/updatedAt if not needed
-  tableName: 'sales_history', // optional: set a specific table name
-});
+  // Insert a new sales record
+  create({ itemId, date, quantitySold }) {
+    const insertStmt = db.prepare(`
+      INSERT INTO sales_history (itemId, date, quantitySold)
+      VALUES (?, ?, ?)
+    `);
+    const result = insertStmt.run(itemId, date, quantitySold);
+    return {
+      id: result.lastInsertRowid,
+      itemId,
+      date,
+      quantitySold
+    };
+  }
+};
 
-// Define associations
-Item.hasMany(SalesHistory, { foreignKey: 'itemId', onDelete: 'CASCADE' });
-SalesHistory.belongsTo(Item, { foreignKey: 'itemId' });
-
-module.exports = SalesHistory;
+module.exports = SalesHistoryModel;
