@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Sales Prediction with Accuracy</title>
+  <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 20px; }
+    .chart-container { max-width: 700px; margin-bottom: 30px; }
+    .prediction-box { padding: 10px; border: 1px solid #ccc; background: #f8f8f8; width: fit-content; margin-bottom: 10px; }
+  </style>
+</head>
+<body>
+  <h1>Sales Prediction /linear regression basis</h1>
+
+  <label for="itemSelect">Select Item:</label>
+  <select id="itemSelect"></select>
+
+  <div class="chart-container">
+    <canvas id="salesChart"></canvas>
+  </div>
+
+  <div class="prediction-box" id="predictionBox">
+    <strong>Predicted Sales Next Month:</strong> <span id="predictionValue">Loading...</span>
+  </div>
+
+  <script>
+    const itemSelect = document.getElementById('itemSelect');
+    const predictionValue = document.getElementById('predictionValue');
+    let salesChart;
+
+    // Helper to format year-month like "Apr 2025"
+    function formatYearMonth(yearMonth) {
+      const [year, month] = yearMonth.split('-').map(Number);
+      const date = new Date(year, month - 1);
+      return date.toLocaleString('default', { month: 'short', year: 'numeric' });
+    }
+
+    // Helper to add one month to "YYYY-MM" string
+    function addMonth(yearMonth) {
+      let [year, month] = yearMonth.split('-').map(Number);
+      month += 1;
+      if (month > 12) {
+        month = 1;
+        year += 1;
+      }
+      return `${year}-${month.toString().padStart(2, '0')}`;
+    }
+
+    async function fetchItems() {
+      const res = await axios.get('/items');
+      res.data.forEach(item => {
+        const opt = document.createElement('option');
+        opt.value = item.id;
+        opt.textContent = item.name;
+        itemSelect.appendChild(opt);
+      });
+    }
+
+    async function fetchSales(itemId) {
+      const res = await axios.get('/api/sales-history');
+      const itemSales = res.data.filter(s => s.itemId === +itemId);
+
+      // Group sales by year-month
+      const salesByYearMonth = {};
+      itemSales.forEach(s => {
+        const d = new Date(s.date);
+        const ym = `${d.getFullYear()}-${(d.getMonth() + 1).toString().padStart(2, '0')}`;
+        salesByYearMonth[ym] = (salesByYearMonth[ym] || 0) + s.quantitySold;
+      });
+
+      // Sort year-month keys
+      const yearMonths = Object.keys(salesByYearMonth).sort();
+      const quantities = yearMonths.map(ym => salesByYearMonth[ym]);
+
+      updateChart(yearMonths, quantities);
+      predictAndCalculateAccuracy(yearMonths, quantities);
+    }
+
+    function updateChart(yearMonths, data) {
+      const ctx = document.getElementById('salesChart').getContext('2d');
+      if (salesChart) salesChart.destroy();
+      salesChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: yearMonths.map(formatYearMonth),
+          datasets: [{
+            data: data.map(Math.round),
+            borderColor: 'blue',
+            fill: false,
+            pointRadius: 6,
+            pointHoverRadius: 8,
+            pointBackgroundColor: 'blue',
+          }]
+        },
+        options: {
+          scales: {
+            y: {
+              beginAtZero: true,
+              ticks: { precision: 0 }
+            }
+          },
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              enabled: true,
+              callbacks: {
+                label: ctx => `Quantity Sold: ${ctx.parsed.y}`
+              }
+            }
+          }
+        }
+      });
+    }
+
+    // Predict next month sales and calculate accuracy on last known month using linear regression
+    function predictAndCalculateAccuracy(yearMonths, data) {
+      if (yearMonths.length < 3) {  // Need at least 3 data points
+        predictionValue.textContent = 'Not enough data for accuracy';
+        return;
+      }
+
+      // Convert yearMonths to numeric index relative to first date
+      const firstYearMonth = yearMonths[0];
+      function ymToIndex(ym) {
+        const [y, m] = ym.split('-').map(Number);
+        const [fy, fm] = firstYearMonth.split('-').map(Number);
+        return (y - fy) * 12 + (m - fm);
+      }
+
+      // Use all except last point to train
+      const trainX = yearMonths.slice(0, -1).map(ymToIndex);
+      const trainY = data.slice(0, -1);
+
+      // Calculate linear regression slope and intercept
+      const n = trainX.length;
+      const sumX = trainX.reduce((a,b) => a + b, 0);
+      const sumY = trainY.reduce((a,b) => a + b, 0);
+      const sumXY = trainX.reduce((acc, val, i) => acc + val * trainY[i], 0);
+      const sumX2 = trainX.reduce((acc, val) => acc + val * val, 0);
+
+      const slope = (n * sumXY - sumX * sumY) / (n * sumX2 - sumX * sumX);
+      const intercept = (sumY - slope * sumX) / n;
+
+      // Predict last known month sales
+      const lastIndex = ymToIndex(yearMonths[yearMonths.length - 1]);
+      const predictedLast = slope * lastIndex + intercept;
+      const actualLast = data[data.length - 1];
+
+      // Calculate accuracy in percentage
+      const errorPercent = Math.abs(predictedLast - actualLast) / actualLast * 100;
+      const accuracyPercent = 100 - errorPercent;
+
+      // Predict next month sales
+      const nextIndex = lastIndex + 1;
+      const predictedNext = slope * nextIndex + intercept;
+      const nextYearMonth = addMonth(yearMonths[yearMonths.length - 1]);
+
+      predictionValue.innerHTML =
+        `Next month (${formatYearMonth(nextYearMonth)}): <strong>${Math.round(predictedNext)}</strong><br>` +
+        `Prediction Accuracy for last month: <strong>${accuracyPercent.toFixed(2)}%</strong> (based on backtest)`;
+    }
+
+    itemSelect.addEventListener('change', () => {
+      if (itemSelect.value) fetchSales(itemSelect.value);
+    });
+
+    // Initialize
+    fetchItems().then(() => {
+      if (itemSelect.options.length) {
+        itemSelect.value = itemSelect.options[0].value;
+        fetchSales(itemSelect.value);
+      }
+    });
+  </script>
+</body>
+</html>
