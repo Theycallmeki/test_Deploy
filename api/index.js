@@ -122,6 +122,14 @@ app.post('/sales-history', async (req, res) => {
   }
 });
 
-// Export for Vercel
+// Export for Vercel serverless deployment
 module.exports = app;
 module.exports.handler = serverless(app);
+
+// Local server for development/testing
+if (require.main === module) {
+  const PORT = process.env.PORT || 3005;
+  app.listen(PORT, () => {
+    console.log(`Server running locally at http://localhost:${PORT}`);
+  });
+}
