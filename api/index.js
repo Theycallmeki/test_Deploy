@@ -1,49 +1,43 @@
-const express = require('express'); 
+const express = require('express');
 const bodyParser = require('body-parser');
 const path = require('path');
-const serverless = require('serverless-http'); // <-- added
-const sequelize = require('./db');
-const Item = require('./models/item');
-const SalesHistory = require('./models/salesHistory');
+const serverless = require('serverless-http');
+const sequelize = require('../db');            // Adjusted path since inside api folder
+const Item = require('../models/item');
+const SalesHistory = require('../models/salesHistory');
 
 const app = express();
-const PORT = 3005;
 
-// Middleware
 app.use(bodyParser.json());
-app.use(express.static('public'));
+app.use(express.static(path.join(__dirname, '..', 'public')));
 
-// Sync DB
+// Sync DB (be aware this runs on every cold start in serverless)
 sequelize.sync().then(() => {
   console.log('✅ Database synced.');
 });
 
-// Serve home.html
+// Serve your static HTML files by full path since no "public" folder serving automatically
 app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, 'views', 'home.html'));
+  res.sendFile(path.join(__dirname, '..', 'views', 'home.html'));
 });
 
-// Serve item.html
 app.get('/item', (req, res) => {
-  res.sendFile(path.join(__dirname, 'views', 'item.html'));
+  res.sendFile(path.join(__dirname, '..', 'views', 'item.html'));
 });
 
-// Serve admin.html
 app.get('/admin', (req, res) => {
-  res.sendFile(path.join(__dirname, 'views', 'admin.html'));
+  res.sendFile(path.join(__dirname, '..', 'views', 'admin.html'));
 });
 
-// Serve salesHistory.html page
 app.get('/sales-history', (req, res) => {
-  res.sendFile(path.join(__dirname, 'views', 'salesHistory.html'));
+  res.sendFile(path.join(__dirname, '..', 'views', 'salesHistory.html'));
 });
 
-// Serve prediction.html page
 app.get('/prediction', (req, res) => {
-  res.sendFile(path.join(__dirname, 'views', 'prediction.html'));
+  res.sendFile(path.join(__dirname, '..', 'views', 'prediction.html'));
 });
 
-// API: Get all items
+// API endpoints (note: they will be prefixed by /api since this is api/index.js)
 app.get('/items', async (req, res) => {
   try {
     const items = await Item.findAll();
@@ -53,7 +47,6 @@ app.get('/items', async (req, res) => {
   }
 });
 
-// API: Create item
 app.post('/items', async (req, res) => {
   const { name, quantity, category, price } = req.body;
   try {
@@ -64,7 +57,6 @@ app.post('/items', async (req, res) => {
   }
 });
 
-// API: Update name/category/price/quantity
 app.put('/items/:id', async (req, res) => {
   const { id } = req.params;
   const { name, category, price, quantity } = req.body;
@@ -84,7 +76,6 @@ app.put('/items/:id', async (req, res) => {
   }
 });
 
-// API: Delete item
 app.delete('/items/:id', async (req, res) => {
   const { id } = req.params;
   try {
@@ -98,8 +89,7 @@ app.delete('/items/:id', async (req, res) => {
   }
 });
 
-// API: Get all sales history with associated Item data
-app.get('/api/sales-history', async (req, res) => {
+app.get('/sales-history', async (req, res) => {
   try {
     const sales = await SalesHistory.findAll({
       include: [{ model: Item }]
@@ -110,8 +100,7 @@ app.get('/api/sales-history', async (req, res) => {
   }
 });
 
-// API: Create a new sales history record and update item quantity
-app.post('/api/sales-history', async (req, res) => {
+app.post('/sales-history', async (req, res) => {
   const { itemId, date, quantitySold } = req.body;
 
   try {
@@ -122,10 +111,8 @@ app.post('/api/sales-history', async (req, res) => {
       return res.status(400).json({ error: 'Insufficient stock' });
     }
 
-    // Create the sales history record
     const sale = await SalesHistory.create({ itemId, date, quantitySold });
 
-    // Decrease the item quantity
     item.quantity -= quantitySold;
     await item.save();
 
@@ -135,11 +122,6 @@ app.post('/api/sales-history', async (req, res) => {
   }
 });
 
-// REMOVE this — no app.listen on Vercel
-// app.listen(PORT, () => {
-//   console.log(`🚀 Server running at http://localhost:${PORT}`);
-// });
-
-// EXPORT app and serverless handler for Vercel:
+// Export for Vercel
 module.exports = app;
-module.exports.handler = serverless(app); 
+module.exports.handler = serverless(app);
